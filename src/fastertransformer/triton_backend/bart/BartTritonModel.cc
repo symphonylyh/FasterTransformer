@@ -56,12 +56,12 @@ BartTritonModel<T>::BartTritonModel(size_t      tensor_para_size,
         reader.GetInteger("encoder", "relative_attention_num_buckets_or_max_pos_seq_len", 32);
 
     // decoding
-    decoding_head_num_     = reader.GetInteger("decoder", "decoder_attention_heads");
-    decoding_d_model_      = reader.GetInteger("decoder", "d_model");
+    decoding_head_num_      = reader.GetInteger("decoder", "decoder_attention_heads");
+    decoding_d_model_       = reader.GetInteger("decoder", "d_model");
     decoding_size_per_head_ = decoding_d_model_ / decoding_head_num_;
-    decoding_inter_size_   = reader.GetInteger("decoder", "decoder_ffn_dim");
-    decoding_num_layer_    = reader.GetInteger("decoder", "decoder_layers");
-    decoding_vocab_size_   = reader.GetInteger("decoder", "vocab_size");
+    decoding_inter_size_    = reader.GetInteger("decoder", "decoder_ffn_dim");
+    decoding_num_layer_     = reader.GetInteger("decoder", "decoder_layers");
+    decoding_vocab_size_    = reader.GetInteger("decoder", "vocab_size");
     decoding_num_bucket_or_max_pos_seq_len_ =
         reader.GetInteger("decoder", "relative_attention_num_buckets_or_max_pos_seq_len", 32);
 

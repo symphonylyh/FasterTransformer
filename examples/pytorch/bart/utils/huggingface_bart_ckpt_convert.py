@@ -226,7 +226,7 @@ def convert_checkpoint(args):
     config["structure"]["activation_function"] = f"{bart_model.config.activation_function}"
     if config["structure"]["activation_function"].find("gated") != -1:
         config["structure"]["use_gated_activation"] = "true"
-    config["structure"]["position_embedding_type"] = "false"
+    config["structure"]["position_embedding_type"] = "absolute"
 
     with open((saved_dir / f"config.ini").as_posix(), 'w') as configfile:
         config.write(configfile)
