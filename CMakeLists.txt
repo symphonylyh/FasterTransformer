@@ -21,11 +21,11 @@ if(${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "11")
   message("CUDA_VERSION ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR} is greater or equal than 11.0, enable -DENABLE_BF16 flag")
 endif()
 
-if((${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "11" AND ${CUDA_VERSION_MINOR} VERSION_GREATER_EQUAL "8") OR (${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "12"))
+if((${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "11" AND ${CUDA_VERSION_MINOR} VERSION_GREATER_EQUAL "7") OR (${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "12"))
   add_definitions("-DENABLE_FP8")
   option(ENABLE_FP8 "ENABLE_FP8" OFF)
   if(ENABLE_FP8)
-    message("CUDA_VERSION ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR} is greater or equal than 11.8, enable -DENABLE_FP8 flag")
+    message("CUDA_VERSION ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR} is greater or equal than 11.7, enable -DENABLE_FP8 flag")
   endif()
 endif()
 
@@ -324,6 +324,10 @@ endif()
 ########################################
 
 add_library(transformer-shared SHARED
+  $<TARGET_OBJECTS:BartDecoder>
+  $<TARGET_OBJECTS:BartDecoding>
+  $<TARGET_OBJECTS:BartEncoder>
+  $<TARGET_OBJECTS:BartTritonBackend>
   $<TARGET_OBJECTS:BaseBeamSearchLayer>
   $<TARGET_OBJECTS:BaseSamplingLayer>
   $<TARGET_OBJECTS:BeamSearchLayer>
@@ -331,8 +335,10 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:BertLayerWeight>
   $<TARGET_OBJECTS:BertTritonBackend>
   $<TARGET_OBJECTS:BertWeight>
+  $<TARGET_OBJECTS:Deberta>
   $<TARGET_OBJECTS:DecoderCrossAttentionLayer>
   $<TARGET_OBJECTS:DecoderSelfAttentionLayer>
+  $<TARGET_OBJECTS:DisentangledAttentionLayer>
   $<TARGET_OBJECTS:DynamicDecodeLayer>
   $<TARGET_OBJECTS:FfnLayer>
   $<TARGET_OBJECTS:FusedAttentionLayer>
@@ -365,6 +371,7 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:T5EncoderTritonBackend>
   $<TARGET_OBJECTS:TensorParallelDecoderCrossAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelDecoderSelfAttentionLayer>
+  $<TARGET_OBJECTS:TensorParallelDisentangledAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelGeluFfnLayer>
   $<TARGET_OBJECTS:TensorParallelSiluFfnLayer>
   $<TARGET_OBJECTS:TensorParallelGptContextAttentionLayer>
@@ -383,6 +390,7 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:beam_search_topk_kernels>
   $<TARGET_OBJECTS:bert_preprocess_kernels>
   $<TARGET_OBJECTS:calibrate_quantize_weight_kernels>
+  $<TARGET_OBJECTS:disentangled_attention_kernels>
   $<TARGET_OBJECTS:cublasAlgoMap>
   $<TARGET_OBJECTS:cublasMMWrapper>
   $<TARGET_OBJECTS:cuda_driver_wrapper>
