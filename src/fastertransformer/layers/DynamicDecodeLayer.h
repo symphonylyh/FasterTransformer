@@ -26,6 +26,18 @@
 
 namespace fastertransformer {
 
+// move struct from {T5,BART}Decoding.h to here, otherwise Triton backend complains re-definition among XXDecoding classes
+// fallback to fp32 dynamic decoder when bf16 specified
+template<typename T>
+struct fallBackType {
+    using Type = float;
+};
+
+template<>
+struct fallBackType<half> {
+    using Type = half;
+};
+
 template<typename T>
 class DynamicDecodeLayer: public BaseLayer {
 protected:
