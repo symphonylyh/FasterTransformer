@@ -70,8 +70,10 @@ BartTritonModel<T>::BartTritonModel(size_t      tensor_para_size,
     tie_word_embeddings_ = reader.GetBoolean("decoder", "tie_word_embeddings", false);
 
     // common settings
-    bart_with_bias_       = reader.GetBoolean("structure", "bart_with_bias", true);
-    mbart_                = reader.GetBoolean("structure", "mbart", true);
+    bart_with_bias_ = reader.GetBoolean("structure", "bart_with_bias", true);
+    mbart_          = reader.GetBoolean("structure", "mbart", true);
+    layernorm_type_ =
+        mbart_ ? ft::LayerNormType::pre_layernorm : ft::LayerNormType::post_layernorm;  // BART post LN, mBART pre LN
     use_gated_activation_ = reader.GetBoolean("structure", "use_gated_activation", false);
     activation_type_      = ft::getActivationType(reader.Get("structure", "activation_function"));
     position_embedding_type_ =
@@ -153,7 +155,7 @@ BartTritonModel<T>::createModelInstance(int                                     
                                                                            attention_type,
                                                                            false,
                                                                            activation_type_,
-                                                                           ft::LayerNormType::post_layernorm,
+                                                                           layernorm_type_,
                                                                            tensor_para_,
                                                                            pipeline_para_,
                                                                            custom_all_reduce_comm,
@@ -188,7 +190,7 @@ BartTritonModel<T>::createModelInstance(int                                     
                                                                               tensor_para_,
                                                                               pipeline_para_,
                                                                               activation_type_,
-                                                                              ft::LayerNormType::post_layernorm,
+                                                                              layernorm_type_,
                                                                               tie_word_embeddings_,
                                                                               custom_all_reduce_comm,
                                                                               enable_custom_all_reduce_));
