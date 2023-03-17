@@ -127,42 +127,43 @@ public:
                 get_ptr<T>(_weights[8]) + _inter_size / tensor_para_.world_size_ * _d_model * (i - first_layer_index);
             if (_bart_with_bias) {
                 bart_encoder_weights.bart_encoder_layer_weights[i]->attn_layernorm_weights_.beta =
-                    get_ptr<T>(_weights[13]) + _d_model * (i - first_layer_index);
+                    get_ptr<T>(_weights[14]) + _d_model * (i - first_layer_index);
                 bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.query_weight.bias =
-                    get_ptr<T>(_weights[14]) + hidden_dim / tensor_para_.world_size_ * (i - first_layer_index);
-                bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.key_weight.bias =
                     get_ptr<T>(_weights[15]) + hidden_dim / tensor_para_.world_size_ * (i - first_layer_index);
-                bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.value_weight.bias =
+                bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.key_weight.bias =
                     get_ptr<T>(_weights[16]) + hidden_dim / tensor_para_.world_size_ * (i - first_layer_index);
+                bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.value_weight.bias =
+                    get_ptr<T>(_weights[17]) + hidden_dim / tensor_para_.world_size_ * (i - first_layer_index);
                 bart_encoder_weights.bart_encoder_layer_weights[i]->attention_weights_.attention_output_weight.bias =
-                    get_ptr<T>(_weights[17]) + _d_model * (i - first_layer_index);
-                bart_encoder_weights.bart_encoder_layer_weights[i]->ffn_layernorm_weights_.beta =
                     get_ptr<T>(_weights[18]) + _d_model * (i - first_layer_index);
+                bart_encoder_weights.bart_encoder_layer_weights[i]->ffn_layernorm_weights_.beta =
+                    get_ptr<T>(_weights[19]) + _d_model * (i - first_layer_index);
                 bart_encoder_weights.bart_encoder_layer_weights[i]->ffn_weights_.intermediate_weight.bias =
-                    get_ptr<T>(_weights[19]) + _inter_size / tensor_para_.world_size_ * (i - first_layer_index);
+                    get_ptr<T>(_weights[20]) + _inter_size / tensor_para_.world_size_ * (i - first_layer_index);
                 if (use_gated_activation) {
                     bart_encoder_weights.bart_encoder_layer_weights[i]->ffn_weights_.intermediate_weight2.bias =
-                        get_ptr<T>(_weights[20]) + _inter_size / tensor_para_.world_size_ * (i - first_layer_index);
+                        get_ptr<T>(_weights[21]) + _inter_size / tensor_para_.world_size_ * (i - first_layer_index);
                 }
                 bart_encoder_weights.bart_encoder_layer_weights[i]->ffn_weights_.output_weight.bias =
-                    get_ptr<T>(_weights[21]) + _d_model * (i - first_layer_index);
+                    get_ptr<T>(_weights[22]) + _d_model * (i - first_layer_index);
             }
         }
 
         // Transformere Block-level weights
         bart_encoder_weights.absolute_or_relative_position_embedding = get_ptr<T>(_weights[9]);
-        bart_encoder_weights.embedding_table                         = get_ptr<T>(_weights[10]);
-        bart_encoder_weights.pre_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[11]);
+        bart_encoder_weights.token_type_embedding                    = get_ptr<T>(_weights[10]);
+        bart_encoder_weights.embedding_table                         = get_ptr<T>(_weights[11]);
+        bart_encoder_weights.pre_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[12]);
         if (_mbart && _bart_with_bias) {
-            bart_encoder_weights.post_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[12]);
-            bart_encoder_weights.pre_transformer_layernorm_weights.beta   = get_ptr<T>(_weights[22]);
-            bart_encoder_weights.post_transformer_layernorm_weights.beta  = get_ptr<T>(_weights[23]);
+            bart_encoder_weights.post_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[13]);
+            bart_encoder_weights.pre_transformer_layernorm_weights.beta   = get_ptr<T>(_weights[23]);
+            bart_encoder_weights.post_transformer_layernorm_weights.beta  = get_ptr<T>(_weights[24]);
         }
         else if (!_mbart && _bart_with_bias) {
-            bart_encoder_weights.pre_transformer_layernorm_weights.beta = get_ptr<T>(_weights[22]);
+            bart_encoder_weights.pre_transformer_layernorm_weights.beta = get_ptr<T>(_weights[23]);
         }
         else if (_mbart && !_bart_with_bias) {
-            bart_encoder_weights.post_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[12]);
+            bart_encoder_weights.post_transformer_layernorm_weights.gamma = get_ptr<T>(_weights[13]);
         }
 
 #ifdef SPARSITY_ENABLED
@@ -338,6 +339,7 @@ public:
         th::Tensor  inter_kernel2,                            // [7] Layer: Gated activation weight (optional)
         th::Tensor  output_kernel,                            // [8] Layer: FC2 weight
         th::Tensor  absolute_or_relative_position_embedding,  // [9] Block: Positional embedding, APE/BPE
+        th::Tensor  token_type_embedding,                     // [+1] Block: Token type embedding
         th::Tensor  embedding_table,                          // [10] Block: Word embedding
         th::Tensor  pre_transformer_layernorm_gamma,          // [11] Block: Embedding LN weight
         th::Tensor  post_transformer_layernorm_gamma,         // [12] Block: Final LN weight (optional, mBART only)

@@ -106,7 +106,7 @@ class FTBartDecodingWeight(object):
                         qkv_bias_len = 0
                 else:
                     weight_dict[name] = param_t
-            elif name.find("decoder.layernorm_embedding") != -1 or name.find("decoder.layer_norm") != -1 or name.find("final_logits_bias") != -1 or name.find("lm_head") != -1:
+            elif name.find("decoder.layernorm_output") != -1 or name.find("decoder.layer_norm") != -1 or name.find("final_logits_bias") != -1 or name.find("lm_head") != -1:
                 weight_dict[name] = param_t
             elif name.find("decoder.embed_positions") != -1:
                 weight_dict[name] = param
@@ -166,18 +166,17 @@ class FTBartDecodingWeight(object):
         # [13] input embedding table should NOT be transposed, [vocab, hidden size]. Directly obtained from raw weight is untransposed
         t = model.get_input_embeddings().weight.contiguous().cuda()
         # input word embedding may be scaled (mBART), instead of customize this in FT, it's better to modify the embedding loading part in PyT
-        embedding_scale = np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
+        embedding_scale = 1.0#np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
         t = t * embedding_scale
         self.w.append(t)
         # [14] output embedding table should NOT be transposed, [vocab, hidden size]. Directly obtained from raw weight is untransposed
         t = model.get_output_embeddings().weight.contiguous().cuda() # same as weight_dict["lm_head.weight"].transpose(1, 0).contiguous().cuda() 
         self.w.append(t)
         # [15] LayerNorm after embedding & before transformer block, special in BART/mBART
-        t = weight_dict["decoder.layernorm_embedding.weight"].contiguous().cuda()
-        self.w.append(t)
+        self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
         # [16] LayerNorm after transformer block, special in mBART
         if self.mbart:
-            t = weight_dict["decoder.layer_norm.weight"].contiguous().cuda()
+            t = weight_dict["decoder.layernorm_output.weight"].contiguous().cuda()
         else:
             t = torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda()
         self.w.append(t)
@@ -236,11 +235,10 @@ class FTBartDecodingWeight(object):
                             for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             self.w.append(t)
             # [29]
-            t = weight_dict["decoder.layernorm_embedding.bias"].contiguous().cuda()
-            self.w.append(t)
+            self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
             # [30]
             if self.mbart:
-                t = weight_dict["decoder.layer_norm.bias"].contiguous().cuda()
+                t = weight_dict["decoder.layernorm_output.bias"].contiguous().cuda()
             else:
                 t = torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda()
             self.w.append(t)
@@ -347,6 +345,7 @@ class FTBart(nn.Module):
                                         is_return_cross_attentions,  # optional, can be None
                                         ft_encoder_outputs,
                                         mem_seq_len)
+
         return_dict = {}
         return_dict['output_ids'] = results.pop(0).reshape([-1, beam_size, max_seq_len]).cpu().numpy()
         return_dict['sequence_lengths'] = results.pop(0).reshape([-1, beam_size]).cpu().numpy()

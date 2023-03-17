@@ -48,6 +48,7 @@ struct BartEncoderWeight {
     std::vector<BartEncoderLayerWeight<T>*> bart_encoder_layer_weights;
     LayerNormWeight<T>                      post_transformer_layernorm_weights;
     T*                                      absolute_or_relative_position_embedding = nullptr;
+    T*                                      token_type_embedding                    = nullptr;
     T*                                      embedding_table                         = nullptr;
     bool                                    bart_with_bias                          = true;
     bool                                    mbart                                   = false;
@@ -85,9 +86,9 @@ private:
 
     int real_weights_num_;
 
-    // 6: [0] absolute/relative positional embedding weight [1] word embedding weight [2] pre-LN weight [3] post-LN
-    // weight [4] pre-LN bias[5] post-LN bias. Assuming both mBART and bias
-    const static int weights_num_ = 6;
+    // 6: [0] absolute/relative positional embedding weight [1] token type embedding [2] word embedding weight [3]
+    // pre-LN weight [4] post-LN weight [5] pre-LN bias[6] post-LN bias. Assuming both mBART and bias
+    const static int weights_num_ = 7;
     T*               weights_ptr[weights_num_];
     size_t           weights_size[weights_num_];
 };

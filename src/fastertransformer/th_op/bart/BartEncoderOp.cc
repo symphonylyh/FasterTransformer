@@ -29,6 +29,7 @@ FasterTransformerBartEncoder::FasterTransformerBartEncoder(th::Tensor  attr_outp
                                                            th::Tensor  inter_kernel2,
                                                            th::Tensor  output_kernel,
                                                            th::Tensor  absolute_or_relative_position_embedding,
+                                                           th::Tensor  token_type_embedding,
                                                            th::Tensor  embedding_table,
                                                            th::Tensor  pre_transformer_layernorm_gamma,
                                                            th::Tensor  post_transformer_layernorm_gamma,
@@ -73,6 +74,7 @@ FasterTransformerBartEncoder::FasterTransformerBartEncoder(th::Tensor  attr_outp
             inter_kernel2,
             output_kernel,
             absolute_or_relative_position_embedding,
+            token_type_embedding,
             embedding_table,
             pre_transformer_layernorm_gamma,
             post_transformer_layernorm_gamma,
@@ -102,6 +104,7 @@ FasterTransformerBartEncoder::FasterTransformerBartEncoder(th::Tensor  attr_outp
         CHECK_INPUT(post_transformer_layernorm_gamma, _st);  // d_model
     }
     CHECK_INPUT(absolute_or_relative_position_embedding, _st);  // head_num, num_bucket or max_seq_len, d_model
+    CHECK_INPUT(token_type_embedding, _st);                     // type_vocab_size, d_model
     CHECK_INPUT(embedding_table, _st);                          // vocab_size, d_model
     if (bart_with_bias) {
         CHECK_INPUT(q_bias, _st);                          // hidden_dim
@@ -236,6 +239,7 @@ static auto fasterTransformerBartEncoderTHS =
     torch::jit::class_<torch_ext::FasterTransformerBartEncoder>("FasterTransformer", "BartEncoder")
 #endif
         .def(torch::jit::init<th::Tensor,
+                              th::Tensor,
                               th::Tensor,
                               th::Tensor,
                               th::Tensor,

@@ -37,7 +37,7 @@ class FTBartEncoderWeight(object):
         self.bart_with_bias = bart_with_bias
         self.mbart = mbart
         self.use_gated_activation = use_gated_activation
-        self.real_weights_num = 24  # assume all weights are allocated
+        self.real_weights_num = 25  # assume all weights are allocated
         self.position_embedding_type = position_embedding_type
         self.weight_data_type = weight_data_type
         self.w = []
@@ -85,109 +85,110 @@ class FTBartEncoderWeight(object):
                 param_t = param
             else:
                 assert False, f"The dimension of param {name} should be 1 or 2"
-            if name.find("encoder.layers") != -1 or name.find("encoder.layernorm_embedding") != -1 or name.find("encoder.layer_norm") != -1:
+            if name.find("encoder.pre_ln_encoder.layer") != -1 or name.find("encoder.pre_ln_encoder.layer_norm") != -1:
                 encoder_weight_dict[name] = param_t
-            if name.find("encoder.embed_positions") != -1:
-                encoder_weight_dict[name] = param # positional embedding table should NOT be transposed
+            if name.find("encoder.position_embeddings") != -1 or name.find("encoder.token_type_embeddings") != -1:
+                encoder_weight_dict[name] = param # embedding tables should NOT be transposed
 
         # [0]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn_layer_norm.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.layer_norm.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t)
         # [1]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.q_proj.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.query.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous())
         # [2]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.k_proj.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.key.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous())
         # [3]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.v_proj.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.value.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous())
         # [4]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.out_proj.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.output.dense.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[1] // self.tensor_para_size, dim=1)[self.tensor_para_rank].contiguous())
         # [5]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.final_layer_norm.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.intermediate.layer_norm.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t)
         # [6]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.fc1.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.intermediate.dense.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous())
         # [7] add empty weight for gated activation for now (BART/mBART model by default don't use gated activation)
         self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
         # [8]
-        t = torch.stack([encoder_weight_dict["encoder.layers.{}.fc2.weight".format(i)]
+        t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.output.dense.weight".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
         self.w.append(t.split(t.shape[1] // self.tensor_para_size, dim=1)[self.tensor_para_rank].contiguous())
-        # [9] (1) positional embedding table should NOT be transposed, [max position embeddings, hidden size] (2) need to apply offset of 2 for absolute position embeddings in BART/mBART
-        t = encoder_weight_dict["encoder.embed_positions.weight"][2:, :].contiguous().cuda()
+        # [9] (1) positional embedding table should NOT be transposed, [max position embeddings, hidden size] (2) AlexaTM's encoder position embedding NO need to apply offset of 2, because it's not using BART/mBART
+        t = encoder_weight_dict["encoder.position_embeddings.weight"].contiguous().cuda()
+        self.w.append(t)
+        # [+1] token type embedding table should NOT be transposed, [type vocab size, hidden size]
+        t = encoder_weight_dict["encoder.token_type_embeddings.weight"].contiguous().cuda()
         self.w.append(t)
         # [10] input embedding table should NOT be transposed, [vocab, hidden size]. Directly obtained from raw weight is untransposed
         t = model.get_input_embeddings().weight.contiguous().cuda() 
         # input word embedding may be scaled (mBART), instead of customize this in FT, it's better to modify the embedding loading part in PyT
-        embedding_scale = np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
+        embedding_scale = 1.0#np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
         t = t * embedding_scale
         self.w.append(t)
         # [11] LayerNorm after embedding & before transformer block, special in BART/mBART
-        t = encoder_weight_dict["encoder.layernorm_embedding.weight"].contiguous().cuda()
-        self.w.append(t)
+        self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
         # [12] LayerNorm after transformer block, special in mBART
         if self.mbart:
-            t = encoder_weight_dict["encoder.layer_norm.weight"].contiguous().cuda()
+            t = encoder_weight_dict["encoder.pre_ln_encoder.layer_norm.weight"].contiguous().cuda()
         else:
             t = torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda()
         self.w.append(t)
 
         if self.bart_with_bias:
             # [13]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn_layer_norm.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.layer_norm.bias".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             self.w.append(t)
             # [14]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.q_proj.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.query.bias".format(i)]
                             for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             t = t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous()
             self.w.append(t)
             # [15]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.k_proj.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.key.bias".format(i)]
                             for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             t = t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous()
             self.w.append(t)
             # [16]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.v_proj.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.self.value.bias".format(i)]
                             for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             t = t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous()
             self.w.append(t)
             # [17]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.self_attn.out_proj.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.attention.output.dense.bias".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             self.w.append(t)
             # [18]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.final_layer_norm.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.intermediate.layer_norm.bias".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             self.w.append(t)
             # [19]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.fc1.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.intermediate.dense.bias".format(i)]
                         for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             t = t.split(t.shape[-1] // self.tensor_para_size, dim=-1)[self.tensor_para_rank].contiguous()
             self.w.append(t)
             # [20] add empty bias for gated activation for now (BART/mBART model by default don't use gated activation)
             self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
             # [21]
-            t = torch.stack([encoder_weight_dict["encoder.layers.{}.fc2.bias".format(i)]
+            t = torch.stack([encoder_weight_dict["encoder.pre_ln_encoder.layer.{}.output.dense.bias".format(i)]
                             for i in range(start_layer, end_layer)], 0).contiguous().cuda()
             self.w.append(t)
             # [22]
-            t = encoder_weight_dict["encoder.layernorm_embedding.bias"].contiguous().cuda()
-            self.w.append(t)
+            self.w.append(torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda())
             # [23] LayerNorm after transformer block, special in mBART
             if self.mbart:
-                t = encoder_weight_dict["encoder.layer_norm.bias"].contiguous().cuda()
+                t = encoder_weight_dict["encoder.pre_ln_encoder.layer_norm.bias"].contiguous().cuda()
             else:
                 t = torch.empty((1, 1), dtype=torch_weight_dtype).contiguous().cuda()
             self.w.append(t)

@@ -39,7 +39,8 @@ __global__ void start_id_embedding_position_lookups_kernel(T*                   
                                                            const int             length,
                                                            const int             max_length,
                                                            const int             batch_size,
-                                                           const int             hidden_units)
+                                                           const int64_t         hidden_units,
+                                                           const T*              token_type_table = nullptr)
 {
     for (int index = blockIdx.x * blockDim.x + threadIdx.x; index < batch_size * length * hidden_units;
          index += blockDim.x * gridDim.x) {
@@ -99,22 +100,26 @@ __global__ void start_id_embedding_position_lookups_kernel(T*                   
             embedding = embedding_table[input_id * hidden_units + col_index];
         }
         T pos_embed        = pos_table == nullptr ? (T)0.f : pos_table[(step - 1) * hidden_units + col_index];
-        from_tensor[index] = embedding + pos_embed;
+        T token_type_embed = token_type_table == nullptr ?
+                                 (T)0.f :
+                                 token_type_table[0 * hidden_units + col_index];  // temporarily default to 0
+        from_tensor[index] = embedding + pos_embed + token_type_embed;
     }
 }
 
 #define WORD_POS_EMBEDDING_LOOPUP_KERNEL(OUTPUT_ID, PROMPT_SRC)                                                        \
-    start_id_embedding_position_lookups_kernel<T, OUTPUT_ID, PROMPT_SRC><<<grid, block, 0, stream>>>(from_tensor,      \
-                                                                                                     output_ids,       \
-                                                                                                     embedding_table,  \
-                                                                                                     pos_table,        \
-                                                                                                     prompt_param,     \
-                                                                                                     input_ids,        \
-                                                                                                     start_step,       \
-                                                                                                     length,           \
-                                                                                                     max_length,       \
-                                                                                                     batch_size,       \
-                                                                                                     hidden_units);
+    start_id_embedding_position_lookups_kernel<T, OUTPUT_ID, PROMPT_SRC>                                               \
+        <<<grid, block, 0, stream>>>(from_tensor,                                                                      \
+                                     output_ids,                                                                       \
+                                     embedding_table,                                                                  \
+                                     pos_table,                                                                        \
+                                     prompt_param,                                                                     \
+                                     input_ids,                                                                        \
+                                     start_step,                                                                       \
+                                     length,                                                                           \
+                                     max_length,                                                                       \
+                                     batch_size,                                                                       \
+                                     hidden_units);
 
 template<typename T>
 void invokeInputIdsEmbeddingLookupPosEncoding(T*                    from_tensor,
@@ -200,6 +205,110 @@ template void invokeInputIdsEmbeddingLookupPosEncoding(__nv_bfloat16*           
                                                        cudaStream_t                      stream);
 #endif
 
+
+#define WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(OUTPUT_ID, PROMPT_SRC)                                                        \
+    start_id_embedding_position_lookups_kernel<T, OUTPUT_ID, PROMPT_SRC>                                               \
+        <<<grid, block, 0, stream>>>(from_tensor,                                                                      \
+                                     output_ids,                                                                       \
+                                     embedding_table,                                                                  \
+                                     pos_table,                                                                        \
+                                     prompt_param,                                                                     \
+                                     input_ids,                                                                        \
+                                     start_step,                                                                       \
+                                     length,                                                                           \
+                                     max_length,                                                                       \
+                                     batch_size,                                                                       \
+                                     hidden_units,                                                                     \
+                                     token_type_table);
+
+template<typename T>
+void invokeInputIdsEmbeddingLookupPosAndTokenTypeEncoding(T*       from_tensor,
+                                                          int*     output_ids,
+                                                          const T* embedding_table,  // can also be inputs_embeds
+                                                          const T* pos_table,
+                                                          const T* token_type_table,
+                                                          pPromptTuningParam<T> prompt_param,
+                                                          const int*            input_ids,
+                                                          const int             start_step,
+                                                          const int             length,
+                                                          const int             max_length,
+                                                          const int             batch_size,
+                                                          const int             hidden_units,
+                                                          cudaStream_t          stream)
+{
+    dim3       grid(min(batch_size * length, 65536));
+    dim3       block(min(hidden_units, 512));
+    const bool has_output_ids = output_ids != nullptr;
+    FT_CHECK(!(has_output_ids && input_ids == nullptr));
+
+    if (has_output_ids) {
+        if (prompt_param.use_request_p_prompt_embedding) {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(true, 2);
+        }
+        else if (prompt_param.p_prompt_tuning_batch_weights != nullptr) {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(true, 1);
+        }
+        else {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(true, 0);
+        }
+    }
+    else {
+        if (prompt_param.use_request_p_prompt_embedding) {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(false, 2);
+        }
+        else if (prompt_param.p_prompt_tuning_batch_weights != nullptr) {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(false, 1);
+        }
+        else {
+            WORD_POS_TOKEN_EMBEDDING_LOOPUP_KERNEL(false, 0);
+        }
+    }
+}
+
+template void invokeInputIdsEmbeddingLookupPosAndTokenTypeEncoding(float*                    from_tensor,
+                                                                   int*                      output_ids,
+                                                                   const float*              embedding_table,
+                                                                   const float*              pos_table,
+                                                                   const float*              token_type_table,
+                                                                   pPromptTuningParam<float> prompt_param,
+                                                                   const int*                input_ids,
+                                                                   const int                 start_step,
+                                                                   const int                 length,
+                                                                   const int                 max_length,
+                                                                   const int                 batch_size,
+                                                                   const int                 hidden_units,
+                                                                   cudaStream_t              stream);
+
+template void invokeInputIdsEmbeddingLookupPosAndTokenTypeEncoding(half*                    from_tensor,
+                                                                   int*                     output_ids,
+                                                                   const half*              embedding_table,
+                                                                   const half*              pos_table,
+                                                                   const half*              token_type_table,
+                                                                   pPromptTuningParam<half> prompt_param,
+                                                                   const int*               input_ids,
+                                                                   const int                start_step,
+                                                                   const int                length,
+                                                                   const int                max_length,
+                                                                   const int                batch_size,
+                                                                   const int                hidden_units,
+                                                                   cudaStream_t             stream);
+
+#ifdef ENABLE_BF16
+template void invokeInputIdsEmbeddingLookupPosAndTokenTypeEncoding(__nv_bfloat16*                    from_tensor,
+                                                                   int*                              output_ids,
+                                                                   const __nv_bfloat16*              embedding_table,
+                                                                   const __nv_bfloat16*              pos_table,
+                                                                   const __nv_bfloat16*              token_type_table,
+                                                                   pPromptTuningParam<__nv_bfloat16> prompt_param,
+                                                                   const int*                        input_ids,
+                                                                   const int                         start_step,
+                                                                   const int                         length,
+                                                                   const int                         max_length,
+                                                                   const int                         batch_size,
+                                                                   const int                         hidden_units,
+                                                                   cudaStream_t                      stream);
+#endif
+
 template<typename T>
 __global__ void inputIdsEmbeddingLookupPosEncodingSoftPrompt(inputIdsEmbeddingLookupPosEncodingSoftPromptParam<T> param)
 {
@@ -242,28 +351,28 @@ __global__ void inputIdsEmbeddingLookupPosEncodingSoftPrompt(inputIdsEmbeddingLo
         // embedding lookup from word ids [batch, beam, length] (part of [batch, beam, max_input_length]), [vocab,
         // hidden] and [batch, max_prefix_soft_prompt_length, hidden] to generate embedding [batch, beam, length +
         // max_prefix_soft_prompt_length, hidden]
-        int       tmp_index = index;
-        const int hidden_id = tmp_index % param.hidden_units;
-        tmp_index           = (tmp_index - hidden_id) / param.hidden_units;
-        const int seq_id    = tmp_index % (param.max_prefix_soft_prompt_length + param.max_input_length);
-        tmp_index           = (tmp_index - seq_id) / (param.max_prefix_soft_prompt_length + param.max_input_length);
-        const int beam_id   = tmp_index % param.beam_width;
-        tmp_index           = (tmp_index - beam_id) / param.beam_width;
-        const int batch_id  = tmp_index % param.batch_size;
-        T         embedding =
+        int       tmp_index    = index;
+        const int hidden_id    = tmp_index % param.hidden_units;
+        tmp_index              = (tmp_index - hidden_id) / param.hidden_units;
+        const int seq_id       = tmp_index % (param.max_prefix_soft_prompt_length + param.max_input_length);
+        tmp_index              = (tmp_index - seq_id) / (param.max_prefix_soft_prompt_length + param.max_input_length);
+        const int beam_id      = tmp_index % param.beam_width;
+        tmp_index              = (tmp_index - beam_id) / param.beam_width;
+        const int     batch_id = tmp_index % param.batch_size;
+        const int64_t hidden_units = param.hidden_units;
+        T             embedding =
             (seq_id < param.prefix_soft_prompt_lengths[batch_id]) ?
-                        (T)param
-                    .prefix_soft_prompt_embedding[batch_id * param.max_prefix_soft_prompt_length * param.hidden_units
-                                                  + seq_id * param.hidden_units + hidden_id] :
-                        param.embedding_table[param.input_ids[batch_id * param.beam_width * param.max_input_length
+                            (T)param.prefix_soft_prompt_embedding[batch_id * param.max_prefix_soft_prompt_length * hidden_units
+                                                      + seq_id * hidden_units + hidden_id] :
+                            param.embedding_table[param.input_ids[batch_id * param.beam_width * param.max_input_length
                                                       + beam_id * param.max_input_length
                                                       + (seq_id - param.prefix_soft_prompt_lengths[batch_id])]
-                                          * param.hidden_units
+                                          * hidden_units
                                       + hidden_id];
 
         T pos_embed              = param.pos_table == nullptr ?
                                        (T)0.0f :
-                                       param.pos_table[(param.start_step + seq_id - 1) * param.hidden_units + hidden_id];
+                                       param.pos_table[(param.start_step + seq_id - 1) * hidden_units + hidden_id];
         param.from_tensor[index] = embedding + pos_embed;
 
         if (seq_id == 0 && hidden_id == 0) {

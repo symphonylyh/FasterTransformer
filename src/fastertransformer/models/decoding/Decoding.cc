@@ -542,7 +542,6 @@ void Decoding<T>::forward(TensorMap*               output_tensors,
         TensorMap dynamic_decode_output_tensors(
             {{"output_ids", Tensor{MEMORY_GPU, TYPE_INT32, {max_seq_len_, batch_size, beam_width_}, output_ids_buf_}},
              {"finished", Tensor{MEMORY_GPU, TYPE_BOOL, {batch_size * beam_width_}, finished_buf_}},
-             {"cum_log_probs", Tensor{MEMORY_GPU, TYPE_FP32, {batch_size * beam_width_}, cum_log_probs_}},
              {"parent_ids", Tensor{MEMORY_GPU, TYPE_INT32, {max_seq_len_, batch_size, beam_width_}, parent_ids_buf_}},
              {"sequence_length", output_tensors->at("sequence_length")},
              {"tgt_cache_indirection",
@@ -550,7 +549,10 @@ void Decoding<T>::forward(TensorMap*               output_tensors,
                      TYPE_INT32,
                      {batch_size, beam_width_, max_seq_len_},
                      cache_indirections_[tgt_indir_idx]}}});
-
+        if (beam_width_ > 1 || output_tensors->isExist("cum_log_probs")) {
+            dynamic_decode_output_tensors.insert(
+                "cum_log_probs", Tensor{MEMORY_GPU, TYPE_FP32, {batch_size * beam_width_}, cum_log_probs_});
+        }
         // TODO(bhsueh) Need to modify the forward function to use unordered_map
         // for (auto t = output_tensors->begin(); t != output_tensors->end(); ++t) {
         //     dynamic_decode_output_tensors.insert(*t);

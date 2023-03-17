@@ -51,9 +51,9 @@ BartEncoderWeight<T>::BartEncoderWeight(const size_t                head_num,
     use_gated_activation(use_gated_activation_para),
     position_embedding_type(pe_type)
 {
-    // 2: absolute/relative positional embedding weight, word
+    // 3: absolute/relative positional embedding weight, token type embedding weight, word
     // embedding weight. mBART has two LN, BART has one LN
-    real_weights_num_ = 2 + (mbart ? 2 : 1) * (bart_with_bias ? 2 : 1);
+    real_weights_num_ = 3 + (mbart ? 2 : 1) * (bart_with_bias ? 2 : 1);
 
     FT_LOG_DEBUG("BartEncoderWeight " + std::string(__func__) + " start");
     FT_CHECK(num_layer_ % pipeline_para_size_ == 0);
@@ -92,19 +92,20 @@ void BartEncoderWeight<T>::initialize()
     else {
         weights_size[0] = (head_num_ / tensor_para_size_) * num_bucket_or_max_seq_len_;
     }
-    weights_size[1] = d_model_ * vocab_size_;
-    weights_size[2] = d_model_;
+    weights_size[1] = 2 * d_model_; // 2 is config.type_vocab_size, need to change as a parameter
+    weights_size[2] = d_model_ * vocab_size_;
+    weights_size[3] = d_model_;
     if (mbart || bart_with_bias) {
         if (mbart && bart_with_bias) {
-            weights_size[3] = d_model_;
             weights_size[4] = d_model_;
             weights_size[5] = d_model_;
+            weights_size[6] = d_model_;
         }
         else if (mbart && !bart_with_bias) {
-            weights_size[3] = d_model_;
+            weights_size[4] = d_model_;
         }
         else if (!mbart && bart_with_bias) {
-            weights_size[3] = d_model_;
+            weights_size[4] = d_model_;
         }
     }  // if none of the flags is on, there are only 3 weights
 
@@ -124,6 +125,7 @@ BartEncoderWeight<T>::~BartEncoderWeight()
         pre_transformer_layernorm_weights.gamma  = nullptr;
         pre_transformer_layernorm_weights.beta   = nullptr;
         absolute_or_relative_position_embedding  = nullptr;
+        token_type_embedding                     = nullptr;
         embedding_table                          = nullptr;
         post_transformer_layernorm_weights.gamma = nullptr;
         post_transformer_layernorm_weights.beta  = nullptr;
@@ -214,19 +216,20 @@ void BartEncoderWeight<T>::setWeightPtr()
     FT_LOG_DEBUG("BartEncoderWeight " + std::string(__func__) + " start");
 
     absolute_or_relative_position_embedding = weights_ptr[0];
-    embedding_table                         = weights_ptr[1];
-    pre_transformer_layernorm_weights.gamma = weights_ptr[2];
+    token_type_embedding = weights_ptr[1];
+    embedding_table                         = weights_ptr[2];
+    pre_transformer_layernorm_weights.gamma = weights_ptr[3];
     if (mbart || bart_with_bias) {
         if (mbart && bart_with_bias) {
-            pre_transformer_layernorm_weights.beta   = weights_ptr[3];
-            post_transformer_layernorm_weights.gamma = weights_ptr[4];
-            post_transformer_layernorm_weights.beta  = weights_ptr[5];
+            pre_transformer_layernorm_weights.beta   = weights_ptr[4];
+            post_transformer_layernorm_weights.gamma = weights_ptr[5];
+            post_transformer_layernorm_weights.beta  = weights_ptr[6];
         }
         else if (mbart && !bart_with_bias) {
-            post_transformer_layernorm_weights.gamma = weights_ptr[3];
+            post_transformer_layernorm_weights.gamma = weights_ptr[4];
         }
         else if (!mbart && bart_with_bias) {
-            pre_transformer_layernorm_weights.beta = weights_ptr[3];
+            pre_transformer_layernorm_weights.beta = weights_ptr[4];
         }
     }
 
@@ -255,46 +258,48 @@ void BartEncoderWeight<T>::loadModel(std::string dir_path)
     if (position_embedding_type == PositionEmbeddingType::absolute) {
         loadWeightFromBin<T>(weights_ptr[0],
                              {(size_t)weights_size[0]},
-                             dir_path + "/encoder.embed_positions.weight.bin",
+                             dir_path + "/encoder.position_embeddings.weight.bin",
                              model_file_type);
     }
 
-    loadWeightFromBin<T>(weights_ptr[1], {(size_t)weights_size[1]}, dir_path + "/shared.weight.bin", model_file_type);
-    loadWeightFromBin<T>(weights_ptr[2],
-                         {(size_t)weights_size[2]},
-                         dir_path + "/encoder.layernorm_embedding.weight.bin",
-                         model_file_type);
+    loadWeightFromBin<T>(weights_ptr[1], {(size_t)weights_size[1]}, dir_path + "/encoder.token_type_embeddings.weight.bin", model_file_type);
+
+    loadWeightFromBin<T>(weights_ptr[2], {(size_t)weights_size[2]}, dir_path + "/shared.weight.bin", model_file_type);
+    // loadWeightFromBin<T>(weights_ptr[3],
+    //                      {(size_t)weights_size[3]},
+    //                      dir_path + "/encoder.layernorm_embedding.weight.bin",
+    //                      model_file_type);
 
     if (mbart || bart_with_bias) {
         if (mbart && bart_with_bias) {
-            loadWeightFromBin<T>(weights_ptr[3],
-                                 {(size_t)weights_size[3]},
-                                 dir_path + "/encoder.layernorm_embedding.bias.bin",
-                                 model_file_type);
-            loadWeightFromBin<T>(weights_ptr[4],
-                                 {(size_t)weights_size[4]},
-                                 dir_path + "/encoder.layer_norm.weight.bin",
+            // loadWeightFromBin<T>(weights_ptr[4],
+            //                      {(size_t)weights_size[4]},
+            //                      dir_path + "/encoder.layernorm_embedding.bias.bin",
+            //                      model_file_type);
+            loadWeightFromBin<T>(weights_ptr[5],
+                                 {(size_t)weights_size[5]},
+                                 dir_path + "/encoder.pre_ln_encoder.layer_norm.weight.bin",
                                  model_file_type);
             loadWeightFromBin<T>(
-                weights_ptr[5], {(size_t)weights_size[5]}, dir_path + "/encoder.layer_norm.bias.bin", model_file_type);
+                weights_ptr[6], {(size_t)weights_size[6]}, dir_path + "/encoder.pre_ln_encoder.layer_norm.bias.bin", model_file_type);
         }
         else if (mbart && !bart_with_bias) {
-            loadWeightFromBin<T>(weights_ptr[3],
-                                 {(size_t)weights_size[3]},
-                                 dir_path + "/encoder.layer_norm.weight.bin",
+            loadWeightFromBin<T>(weights_ptr[4],
+                                 {(size_t)weights_size[4]},
+                                 dir_path + "/encoder.pre_ln_encoder.layer_norm.weight.bin",
                                  model_file_type);
         }
         else if (!mbart && bart_with_bias) {
-            loadWeightFromBin<T>(weights_ptr[3],
-                                 {(size_t)weights_size[3]},
-                                 dir_path + "/encoder.layernorm_embedding.bias.bin",
-                                 model_file_type);
+            // loadWeightFromBin<T>(weights_ptr[4],
+            //                      {(size_t)weights_size[4]},
+            //                      dir_path + "/encoder.layernorm_embedding.bias.bin",
+            //                      model_file_type);
         }
     }
 
     for (int l = 0; l < num_layer_; l++) {
         if (isValidLayerParallelId(l)) {
-            bart_encoder_layer_weights[l]->loadModel(dir_path + "/encoder.layers." + std::to_string(l) + ".",
+            bart_encoder_layer_weights[l]->loadModel(dir_path + "/encoder.pre_ln_encoder.layer." + std::to_string(l) + ".",
                                                      model_file_type);
         }
     }

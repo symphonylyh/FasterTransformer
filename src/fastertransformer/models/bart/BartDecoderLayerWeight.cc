@@ -216,16 +216,15 @@ void BartDecoderLayerWeight<T>::setWeightPtr()
     cross_attention_weights.attention_output_weight.kernel = weights_ptr[7];
     cross_attn_layernorm_weights.gamma                     = weights_ptr[8];
 
-    ffn_weights.intermediate_weight.kernel = weights_ptr[9];
+    ffn_weights.intermediate_weight.kernel  = weights_ptr[9];
 
     if (use_gated_activation_) {
         ffn_weights.intermediate_weight2.kernel = weights_ptr[10];
         ffn_weights.output_weight.kernel        = weights_ptr[11];
     }
     else {
-        ffn_weights.output_weight.kernel = weights_ptr[10];
+        ffn_weights.output_weight.kernel       = weights_ptr[10];
     }
-
     if (bart_with_bias_) {
         if (use_gated_activation_) {
             layernorm_weights.beta                              = weights_ptr[12];

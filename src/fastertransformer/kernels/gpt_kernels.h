@@ -74,6 +74,21 @@ void invokeInputIdsEmbeddingLookupPosEncoding(T*                    from_tensor,
                                               cudaStream_t          stream);
 
 template<typename T>
+void invokeInputIdsEmbeddingLookupPosAndTokenTypeEncoding(T*                    from_tensor,
+                                                          int*                  output_ids,
+                                                          const T*              embedding_table,
+                                                          const T*              pos_table,
+                                                          const T*              token_type_table,
+                                                          pPromptTuningParam<T> prompt_param,
+                                                          const int*            input_ids,
+                                                          const int             start_step,
+                                                          const int             length,
+                                                          const int             max_length,
+                                                          const int             batch_size,
+                                                          const int             hidden_units,
+                                                          cudaStream_t          stream);
+
+template<typename T>
 void invokeInputIdsEmbeddingLookupPosEncodingSoftPrompt(inputIdsEmbeddingLookupPosEncodingSoftPromptParam<T> param);
 
 template<typename T>

@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+import os
 import torch  # pytype: disable=import-error
 import numpy as np
-from transformers import BartForConditionalGeneration, MBartForConditionalGeneration
+dir_path = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(dir_path + "/../../../../")
+from examples.pytorch.bart.alexa_teacher_models.models.alexatm_seq2seq import AlexaTMSeq2SeqForConditionalGeneration
+from examples.pytorch.bart.alexa_teacher_models.models.alexatm_seq2seq_config import AlexaTMSeq2SeqConfig
+
 import argparse
 import configparser
 from datetime import datetime
 import logging
 from pathlib import Path
-
-import sys
-import os
-dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(dir_path + "/../../../../3rdparty/transformers/src/")
 
 
 LOGGER = logging.getLogger(__name__)
@@ -96,14 +97,24 @@ def split_and_convert_process(model, factor, saved_dir, np_weight_data_type):
         # word embedding table [vocab size, hidden size] (1) should NOT be transposed (2) may be scaled (mBART), instead of customize this in FT, it's better to modify during embedding loading
         if name.find("shared.weight") != -1:
             param = param.transpose(1, 0)
-            embedding_scale = np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
+            embedding_scale = 1.0 #np.sqrt(model.config.d_model) if model.config.scale_embedding else 1.0
             param = param * embedding_scale
             saved_path = saved_dir / f"{saved_name}.bin"
             param.tofile(saved_path.as_posix())
 
-        # positional embedding table [max position embeddings, hidden size] (1) should NOT be transposed (2) need to apply offset of 2 for absolute position embeddings in BART/mBART
-        elif name.find("encoder.embed_positions") != -1 or name.find("decoder.embed_positions") != -1:
+        # positional embedding table [max position embeddings, hidden size] (1) should NOT be transposed (2) need to apply offset of 2 for absolute position embeddings in BART/mBART for decoder. Encoder is not using BART/mBART so NO need to offset 2
+        elif name.find("encoder.position_embeddings") != -1: 
+            param = param.transpose(1, 0)
+            saved_path = saved_dir / f"{saved_name}.bin"
+            param.tofile(saved_path.as_posix())
+        elif name.find("decoder.embed_positions") != -1:
             param = param.transpose(1, 0)[2:, :]
+            saved_path = saved_dir / f"{saved_name}.bin"
+            param.tofile(saved_path.as_posix())
+        
+        # token type embedding table should NOT be transposed, [type vocab size, hidden size]
+        elif name.find("encoder.token_type_embeddings") != -1:
+            param = param.transpose(1, 0)
             saved_path = saved_dir / f"{saved_name}.bin"
             param.tofile(saved_path.as_posix())
         
@@ -120,19 +131,19 @@ def split_and_convert_process(model, factor, saved_dir, np_weight_data_type):
 
         # all layernorm's weight and bias are shared weights, only need to convert the weights of rank 0
         # type 1 - layer-level LN: {layers}_layer_norm{.weight, .bias} 
-        # type 2 - transformer-level LN for embedding: {encoder, decoder}layernorm_embedding{.weight, .bias}
-        # type 3 - transformer-level LN after transformer (special in mBART): {encoder, decoder}layer_norm{.weight, .bias}
-        elif name.find("layer_norm") != -1 or name.find("layernorm_embedding") != -1:
+        # type 2 - transformer-level LN after transformer (special in mBART): {encoder}layer_norm{.weight, .bias}, {decoder}layernorm_output{.weight, .bias} 
+        elif name.find("layer_norm") != -1 or name.find("layernorm_output") != -1:
             saved_path = saved_dir / f"{saved_name}.bin"
             param.tofile(saved_path.as_posix())
 
         # FC1 layers weights and biases & encoder self-attn Q/K/V weights and biases & decoder cross-attn Q/K/V weights and biases, split on last dim
         elif (
-            name.find("fc1") != -1
+            name.find("fc1") != -1 or 
+            name.find("intermediate.dense") != -1
             or (name.find("encoder") != -1 and (
-                name.find("self_attn.q_proj") != -1
-                or name.find("self_attn.k_proj") != -1
-                or name.find("self_attn.v_proj") != -1
+                name.find("self.query") != -1
+                or name.find("self.key") != -1
+                or name.find("self.value") != -1
             )
             )
             or name.find("encoder_attn.q_proj") != -1
@@ -155,10 +166,12 @@ def split_and_convert_process(model, factor, saved_dir, np_weight_data_type):
         ):
             pass
         
-        # output linear layers weigths & FC2 layers weights, split on first dim
+        # output linear layers weights & FC2 layers weights, split on first dim
         elif (
-            name.find("self_attn.out_proj.weight") != -1
+            name.find("attention.output.dense.weight") != -1
             or name.find("encoder_attn.out_proj.weight") != -1
+            or name.find("self_attn.out_proj.weight") != -1
+            or name.find("output.dense.weight") != -1
             or name.find("fc2.weight") != -1
         ):
             split_params = np.split(param, factor, axis=0)
@@ -168,13 +181,15 @@ def split_and_convert_process(model, factor, saved_dir, np_weight_data_type):
 
         # output linear layers biases & FC2 layers biases are shared, no split
         elif (
-            name.find("out_proj.bias") != -1
+            name.find("attention.output.dense.bias") != -1
+            or name.find("out_proj.bias") != -1
+            or name.find("output.dense.bias") != -1
             or name.find("fc2.bias") != -1
         ):
             saved_path = saved_dir / f"{saved_name}.bin"
             param.tofile(saved_path.as_posix())
 
-        elif name.find("encoder.embed_tokens.weight") != -1 or \
+        elif name.find("encoder.token_embeddings.weight") != -1 or \
                 name.find("decoder.embed_tokens.weight") != -1:
             LOGGER.warning(f"Not save {name}, using shared.weight directly.")
         else:
@@ -184,10 +199,18 @@ def convert_checkpoint(args):
     saved_dir = Path(args.saved_dir) / f"{args.inference_tensor_para_size:d}-gpu"
     saved_dir.mkdir(parents=True, exist_ok=True)
 
-    if 'mbart' not in args.in_file:
-        bart_model = BartForConditionalGeneration.from_pretrained(args.in_file)
-    else:
-        bart_model = MBartForConditionalGeneration.from_pretrained(args.in_file)
+    if 'alexatm' in args.in_file:
+        config = AlexaTMSeq2SeqConfig(
+            max_position_embeddings=1024,
+            d_model=1536, #4096,
+            encoder_ffn_dim=1536, #16384
+            encoder_layers=2, #46
+            encoder_attention_heads=6, #32
+            decoder_ffn_dim=1536, #16384
+            decoder_layers=2, #32
+            decoder_attention_heads=6, #32
+        )
+        bart_model = AlexaTMSeq2SeqForConditionalGeneration(config)
 
     config = configparser.ConfigParser()
     
@@ -204,6 +227,8 @@ def convert_checkpoint(args):
         if key in {'decoder_ffn_dim', 'decoder_layers', 'decoder_attention_heads', 'relative_attention_num_buckets', 'tie_word_embeddings', 'bos_token_id', 'pad_token_id', 'eos_token_id', 'sep_token_id', 'decoder_start_token_id'}: 
             config["decoder"][key] = f"{val}"
     
+    config["decoder"]["decoder_start_token_id"] = "2" # unknown? Need Alexa info
+
     for key, val in rename_mapping.items():
         if key in config['encoder']:
             config['encoder'][val] = config['encoder'].pop(key)
@@ -222,8 +247,8 @@ def convert_checkpoint(args):
 
     # structure info
     config["structure"]["bart_with_bias"] = "true"
-    config["structure"]["mbart"] = f"{bart_model.config.add_final_layer_norm}".lower()
-    config["structure"]["activation_function"] = f"{bart_model.config.activation_function}"
+    config["structure"]["mbart"] = "true"
+    config["structure"]["activation_function"] = f"{bart_model.config.hidden_act}"
     if config["structure"]["activation_function"].find("gated") != -1:
         config["structure"]["use_gated_activation"] = "true"
     config["structure"]["position_embedding_type"] = "absolute"

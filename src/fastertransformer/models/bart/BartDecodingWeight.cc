@@ -268,37 +268,37 @@ void BartDecodingWeight<T>::loadModel(std::string dir_path)
 
     loadWeightFromBin<T>(weights_ptr[1], {(size_t)weights_size[1]}, dir_path + "/shared.weight.bin", model_file_type);
     loadWeightFromBin<T>(weights_ptr[2], {(size_t)weights_size[2]}, dir_path + "/lm_head.weight.bin", model_file_type);
-    loadWeightFromBin<T>(weights_ptr[3],
-                         {(size_t)weights_size[3]},
-                         dir_path + "/decoder.layernorm_embedding.weight.bin",
-                         model_file_type);
+    // loadWeightFromBin<T>(weights_ptr[3],
+    //                      {(size_t)weights_size[3]},
+    //                      dir_path + "/decoder.layernorm_embedding.weight.bin",
+    //                      model_file_type);
 
     if (mbart || bart_with_bias) {
         if (mbart && bart_with_bias) {
             loadWeightFromBin<T>(weights_ptr[4],
                                  {(size_t)weights_size[4]},
-                                 dir_path + "/decoder.layer_norm.weight.bin",
+                                 dir_path + "/decoder.layernorm_output.weight.bin",
                                  model_file_type);
-            loadWeightFromBin<T>(weights_ptr[5],
-                                 {(size_t)weights_size[5]},
-                                 dir_path + "/decoder.layernorm_embedding.bias.bin",
-                                 model_file_type);
+            // loadWeightFromBin<T>(weights_ptr[5],
+            //                      {(size_t)weights_size[5]},
+            //                      dir_path + "/decoder.layernorm_embedding.bias.bin",
+            //                      model_file_type);
             loadWeightFromBin<T>(
-                weights_ptr[6], {(size_t)weights_size[6]}, dir_path + "/decoder.layer_norm.bias.bin", model_file_type);
+                weights_ptr[6], {(size_t)weights_size[6]}, dir_path + "/decoder.layernorm_output.bias.bin", model_file_type);
             loadWeightFromBin<T>(
                 weights_ptr[7], {(size_t)weights_size[7]}, dir_path + "/final_logits_bias.bin", model_file_type);
         }
         else if (mbart && !bart_with_bias) {
             loadWeightFromBin<T>(weights_ptr[4],
                                  {(size_t)weights_size[4]},
-                                 dir_path + "/decoder.layer_norm.weight.bin",
+                                 dir_path + "/decoder.layernorm_output.weight.bin",
                                  model_file_type);
         }
         else if (!mbart && bart_with_bias) {
-            loadWeightFromBin<T>(weights_ptr[4],
-                                 {(size_t)weights_size[4]},
-                                 dir_path + "/decoder.layernorm_embedding.bias.bin",
-                                 model_file_type);
+            // loadWeightFromBin<T>(weights_ptr[4],
+            //                      {(size_t)weights_size[4]},
+            //                      dir_path + "/decoder.layernorm_embedding.bias.bin",
+            //                      model_file_type);
             loadWeightFromBin<T>(
                 weights_ptr[5], {(size_t)weights_size[5]}, dir_path + "/final_logits_bias.bin", model_file_type);
         }
