@@ -28,7 +28,7 @@ void WenetEncoder<T>::initialize()
     check_cuda_error(cudaStreamCreate(&stream2_));
     check_cuda_error(cudaEventCreate(&stream_finished_));
     check_cuda_error(cudaEventCreate(&stream2_finished_));
-    check_cuda_error(cudaMallocHost((void**)&h_var_token_num_, sizeof(size_t)));
+    h_var_token_num_ = (size_t*)allocator_->reMalloc(h_var_token_num_, sizeof(size_t), true, true);
 
     attention_layer_ = new RelPositionAttentionLayer<T>(0,
                                                         0,
@@ -170,7 +170,7 @@ WenetEncoder<T>::~WenetEncoder()
     delete ffn_layer_;
     delete conformer_conv_layer_;
 
-    check_cuda_error(cudaFreeHost(h_var_token_num_));
+    allocator_->free((void**)(&h_var_token_num_), true);
     check_cuda_error(cudaEventDestroy(stream2_finished_));
     check_cuda_error(cudaEventDestroy(stream_finished_));
     check_cuda_error(cudaStreamDestroy(stream2_));
@@ -213,8 +213,8 @@ void WenetEncoder<T>::allocateBuffer(
         inter_conv2_output_buf_, sizeof(T) * batch_size * d_model_ * seq_len2 * feature_size2, false);
     inter_fc_input_buf_ = (T*)allocator_->reMalloc(
         inter_fc_input_buf_, sizeof(T) * batch_size * seq_len2 * d_model_ * feature_size2, false);
-    // Current workspace used for CuDNN Convolution is 1 << 27
-    conv_workspace_ = (T*)allocator_->reMalloc(conv_workspace_, 1 << 27, false);
+    // Current workspace used for CuDNN Convolution is 1 << 29
+    conv_workspace_ = (T*)allocator_->reMalloc(conv_workspace_, 1 << 29, false);
     // Position Embed
 
     input_hidden_state_ =
