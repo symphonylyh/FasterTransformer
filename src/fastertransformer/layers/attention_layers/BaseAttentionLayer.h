@@ -68,17 +68,21 @@ AttentionType getAttentionType(size_t     size_per_head,
         }
         // GPT and its variants
         else {
-            if ((sm == kSM_70 || sm == kSM_72 || sm == kSM_75 || sm == kSM_80 || sm == kSM_86 || sm == kSM_89)
-                && (size_per_head == 32 || size_per_head == 40 || size_per_head == 64 || size_per_head == 80
-                    || size_per_head == 128 || size_per_head == 144 || size_per_head == 160 || size_per_head == 256)) {
-                return remove_padding ? AttentionType::FUSED_MHA : AttentionType::UNFUSED_PADDED_MHA;
+           // FMHA_ENABLE only affects gpt-style models (causal-mask)
+            char * fused_qkv = std::getenv("FMHA_ENABLE");
+            if (fused_qkv != nullptr && std::string(fused_qkv) == "ON") {
+                if ((sm == kSM_70 || sm == kSM_72 || sm == kSM_75 || sm == kSM_80 || sm == kSM_86 || sm == kSM_89)
+                    && (size_per_head == 32 || size_per_head == 40 || size_per_head == 64 || size_per_head == 80
+                        || size_per_head == 128 || size_per_head == 144 || size_per_head == 160 || size_per_head == 256)) {
+                    return remove_padding ? AttentionType::FUSED_MHA : AttentionType::UNFUSED_PADDED_MHA;
+                }
             }
         }
     }
 #ifdef ENABLE_FP8
     else if (std::is_same<T, __nv_fp8_e4m3>::value && is_fuse) {
         if (!causal_mask) {
-            if (sm == kSM_90 && max_seq_len < 512 && is_fuse && size_per_head == 64) {
+            if ((sm == kSM_89 || sm == kSM_90) && max_seq_len < 512 && is_fuse && size_per_head == 64) {
                 return remove_padding ? AttentionType::FUSED_MHA : AttentionType::FUSED_PADDED_MHA;
             }
             else {
