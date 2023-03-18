@@ -192,6 +192,8 @@ def split_and_convert_process(model, factor, saved_dir, np_weight_data_type):
         elif name.find("encoder.token_embeddings.weight") != -1 or \
                 name.find("decoder.embed_tokens.weight") != -1:
             LOGGER.warning(f"Not save {name}, using shared.weight directly.")
+        elif name.find("encoder.position_ids") != -1:
+            LOGGER.warning(f"Not save {name}, position ids is deterministic.")
         else:
             LOGGER.warning(f"cannot find name '{name}' with shape {param.shape}")
 
@@ -208,9 +210,28 @@ def convert_checkpoint(args):
             encoder_attention_heads=6, #32
             decoder_ffn_dim=1536, #16384
             decoder_layers=2, #32
-            decoder_attention_heads=6, #32
+            decoder_attention_heads=6, #32,
+            decoder_start_token_id=2
         )
         bart_model = AlexaTMSeq2SeqForConditionalGeneration(config)
+
+    # print weight names
+    # for name, para in bart_model.state_dict().items():
+    #     print(f'{name}: {para.shape}') 
+    
+    # sample input verification with Triton
+    bart_model.to('cuda')
+    batch_size = 1
+    input_len = 12
+    inputs = {
+        'input_ids': torch.tensor([[2, 0, 2005, 340, 10269, 7, 340, 759, 10269, 83,
+                12942, 2]]).to("cuda"),
+        'attention_mask': torch.ones(size=(batch_size, input_len)).to("cuda")    
+    }
+    max_output_len = 32
+    num_beams = 1
+    hf_outputs = bart_model.generate(inputs['input_ids'], max_length=max_output_len, num_beams=num_beams)
+    print("HF: ", hf_outputs)
 
     config = configparser.ConfigParser()
     

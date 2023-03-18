@@ -112,10 +112,18 @@ ft_decoding = FTBartDecoding(ft_decoding_weight.w, lib_path,
 ft_bart = FTBart(ft_encoder, ft_decoding)
 
 ## Test
+# batch_size = 1
+# input_len = 512
+# inputs = {
+#     'input_ids': torch.randint(0, config.vocab_size, size=(batch_size, input_len)).to("cuda"),
+#     'attention_mask': torch.ones(size=(batch_size, input_len)).to("cuda")    
+# }
+
 batch_size = 1
-input_len = 512
+input_len = 12
 inputs = {
-    'input_ids': torch.randint(0, config.vocab_size, size=(batch_size, input_len)).to("cuda"),
+    'input_ids': torch.tensor([[2, 0, 2005, 340, 10269, 7, 340, 759, 10269, 83,
+            12942, 2]]).to("cuda"),
     'attention_mask': torch.ones(size=(batch_size, input_len)).to("cuda")    
 }
 
@@ -133,7 +141,7 @@ if use_fp16:
 else:
     model.float()
 hf_outputs = model.generate(inputs['input_ids'], max_length=max_output_len, num_beams=num_beams)
-# print("HF output ids",hf_outputs)
+print("HF output ids",hf_outputs)
 
 hf_latencies = []
 for _ in range(measurement_iters):
@@ -166,7 +174,7 @@ ft_outputs = []
 for i in range(batch_size):
     # selecting the top sequence from beam width number of sequences
     ft_outputs.append(list(ft_output_ids[i, 0, :][1:ft_sequence_length[i , 0]])) # start from 1 to exclude the 1st token
-# print("FT output ids", ft_outputs)
+print("FT output ids", ft_outputs)
 
 ft_latencies = []
 for _ in range(measurement_iters):
