@@ -201,8 +201,10 @@ def convert_checkpoint(args):
     saved_dir = Path(args.saved_dir) / f"{args.inference_tensor_para_size:d}-gpu"
     saved_dir.mkdir(parents=True, exist_ok=True)
 
-    if 'alexatm' in args.in_file:
-        config = AlexaTMSeq2SeqConfig(
+    if os.path.isdir(args.in_file):
+        bart_model = AlexaTMSeq2SeqForConditionalGeneration.from_pretrained(args.in_file)
+    elif 'alexatm' in args.in_file:
+        hf_config = AlexaTMSeq2SeqConfig(
             max_position_embeddings=1024,
             d_model=1536, #4096,
             encoder_ffn_dim=1536, #16384
@@ -210,17 +212,17 @@ def convert_checkpoint(args):
             encoder_attention_heads=6, #32
             decoder_ffn_dim=1536, #16384
             decoder_layers=2, #32
-            decoder_attention_heads=6, #32,
-            decoder_start_token_id=2
+            decoder_attention_heads=6, #32
+            decoder_start_token_id = 2 # unknown? Need Alexa info
         )
-        bart_model = AlexaTMSeq2SeqForConditionalGeneration(config)
+        bart_model = AlexaTMSeq2SeqForConditionalGeneration(hf_config)
 
     # print weight names
     # for name, para in bart_model.state_dict().items():
     #     print(f'{name}: {para.shape}') 
     
     # sample input verification with Triton
-    bart_model.to('cuda')
+    bart_model = bart_model.eval().to('cuda')
     batch_size = 1
     input_len = 12
     inputs = {
@@ -228,7 +230,7 @@ def convert_checkpoint(args):
                 12942, 2]]).to("cuda"),
         'attention_mask': torch.ones(size=(batch_size, input_len)).to("cuda")    
     }
-    max_output_len = 32
+    max_output_len = 32 
     num_beams = 1
     hf_outputs = bart_model.generate(inputs['input_ids'], max_length=max_output_len, num_beams=num_beams)
     print("HF: ", hf_outputs)

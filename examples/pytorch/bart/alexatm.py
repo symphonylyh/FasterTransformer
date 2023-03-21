@@ -33,17 +33,22 @@ config = AlexaTMSeq2SeqConfig(
     decoder_ffn_dim=1536, #16384
     decoder_layers=2, #32
     decoder_attention_heads=6, #32
+    decoder_start_token_id = 2 # unknown? Need Alexa info
 )
+# print(config)
+
+## random weight model
 model = AlexaTMSeq2SeqForConditionalGeneration(config)
+model.save_pretrained('/tmp/alexa')
+
+## fixed weight model for debugging
+# model = AlexaTMSeq2SeqForConditionalGeneration.from_pretrained('/tmp/alexa')
+
 model = model.eval().to('cuda')
 
 # FT
 layernorm_type = "pre_layernorm"
 is_mbart = True
-
-config = model.config
-config.decoder_start_token_id = 2 # unknown? Need Alexa info
-# print(config)
 
 # print all weights
 # for name, para in model.named_parameters():
