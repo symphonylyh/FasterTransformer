@@ -394,6 +394,7 @@ void T5Decoding<T>::forward(TensorMap*                 output_tensors,
     //      presence_penalty [1] or [batch_size] on cpu, optional, float.
     //          Only one of repetition and presence penalties is allowed.
     //      min_length [1] or [batch_size] on cpu, optional, int
+    //      no_repeat_ngram_size [1] or [batch_size] on cpu, optional, uint.
     //      random_seed [1] or [batch_size] on cpu, optional, unsigned long long int.
     //      top_p_decay [batch_size] on gpu, float, optional
     //      top_p_min [batch_size] on gpu, float, optional

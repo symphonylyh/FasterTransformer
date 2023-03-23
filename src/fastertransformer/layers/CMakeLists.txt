@@ -63,7 +63,7 @@ set_property(TARGET DynamicDecodeLayer PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET DynamicDecodeLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(DynamicDecodeLayer PUBLIC -lcudart
                         TopKSamplingLayer TopPSamplingLayer
-                        OnlineBeamSearchLayer BeamSearchLayer ban_bad_words stop_criteria
+                        OnlineBeamSearchLayer BeamSearchLayer ban_bad_words ban_repeat_ngram stop_criteria
                         gpt_kernels tensor nvtx_utils)
 
 add_library(TensorParallelSiluFfnLayer STATIC TensorParallelSiluFfnLayer.cc)

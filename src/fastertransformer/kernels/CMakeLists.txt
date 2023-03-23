@@ -51,6 +51,10 @@ add_library(ban_bad_words STATIC ban_bad_words.cu)
 set_property(TARGET ban_bad_words PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET ban_bad_words PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 
+add_library(ban_repeat_ngram STATIC ban_repeat_ngram.cu)
+set_property(TARGET ban_repeat_ngram PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET ban_repeat_ngram PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+
 add_library(stop_criteria STATIC stop_criteria_kernels.cu)
 set_property(TARGET stop_criteria PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET stop_criteria PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)

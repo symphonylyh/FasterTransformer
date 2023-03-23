@@ -386,6 +386,7 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:add_bias_transpose_kernels>
   $<TARGET_OBJECTS:add_residual_kernels>
   $<TARGET_OBJECTS:ban_bad_words>
+  $<TARGET_OBJECTS:ban_repeat_ngram>
   $<TARGET_OBJECTS:beam_search_penalty_kernels>
   $<TARGET_OBJECTS:beam_search_topk_kernels>
   $<TARGET_OBJECTS:bert_preprocess_kernels>

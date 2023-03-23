@@ -16,6 +16,7 @@
 
 #include "src/fastertransformer/layers/DynamicDecodeLayer.h"
 #include "src/fastertransformer/kernels/ban_bad_words.h"
+#include "src/fastertransformer/kernels/ban_repeat_ngram.h"
 #include "src/fastertransformer/kernels/stop_criteria_kernels.h"
 #include "src/fastertransformer/layers/beam_search_layers/BaseBeamSearchLayer.h"
 #include "src/fastertransformer/layers/beam_search_layers/BeamSearchLayer.h"
@@ -212,6 +213,7 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
      *   \param  repetition_penalty [1] or [batch_size] on cpu, optional, float
      *   \param  presence_penalty [1] or [batch_size] on cpu, optional, float
      *                Only one of repetition and presence penalties is allowed.
+     *   \param  no_repeat_ngram_size [1] or [batch_size] on cpu, optional, uint
      *   \param  random_seed [1] or [batch_size] on cpu, optional, unsigned long long int
      *   \param  bad_words_list [2, bad_words_length] or [batch_size, 2, bad_words_length], optional
      *   \param  src_cache_indirection
@@ -223,7 +225,7 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
      *   \param  top_p_reset_ids [batch_size] on gpu, uint32, optional
      *
      * output_tensors:
-     *   \param  output_ids [max_seq_len, batch_size]
+     *   \param  output_ids [max_seq_len, batch_size * beam_width]
      *   \param  finished [batch_size * beam_width], optional
      *   \param  should_stop [1] on cpu
      *   \param  cum_log_probs [batch_size * beam_width], necessary in beam search
@@ -246,6 +248,29 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
     const size_t beam_width       = input_tensors->at("logits").shape[1];
     const size_t local_batch_size = (size_t)input_tensors->at("local_batch_size").getVal<int>();
 
+    if (input_tensors->isExist("no_repeat_ngram_size")) {
+        const int no_repeat_ngram_size = input_tensors->at("no_repeat_ngram_size").getVal<uint>();
+
+        FT_CHECK_WITH_INFO(no_repeat_ngram_size >= 0,
+                           "No-repeat Ngram size must >= 0. Set as 0 by default if this option is not needed.");
+
+        const int id_offset                      = ite * local_batch_size * beam_width;
+        const int decode_vocab_size_units_offset = id_offset * vocab_size_padded_;
+
+        invokeBanRepeatNgram((T*)input_tensors->at("logits").getPtrWithOffset(decode_vocab_size_units_offset),
+                             output_tensors->at("output_ids").getPtr<const int>(),
+                             output_tensors->at("finished").getPtr<const bool>(),
+                             beam_width > 1 ? output_tensors->at("parent_ids").getPtr<const int>() : nullptr,
+                             batch_size,
+                             local_batch_size,
+                             beam_width,
+                             no_repeat_ngram_size,
+                             id_offset,
+                             vocab_size_padded_,
+                             step,
+                             stream_);
+    }
+
     if (input_tensors->isExist("bad_words_list")) {
         const auto& bad_words     = input_tensors->at("bad_words_list");
         const int*  bad_words_ptr = bad_words.getPtr<const int>();
@@ -264,7 +289,7 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
         const bool   shared_bad_words = is_matrix || bad_words.shape[0] == 1;
         const size_t bad_words_len    = bad_words.shape[is_matrix ? 1 : 2];
         // Add check on batch size of bad words
-        const int id_offset                      = ite * local_batch_size;
+        const int id_offset                      = ite * local_batch_size * beam_width;
         const int decode_vocab_size_units_offset = id_offset * vocab_size_padded_;
 
         invokeBanBadWords((T*)input_tensors->at("logits").getPtrWithOffset(decode_vocab_size_units_offset),
