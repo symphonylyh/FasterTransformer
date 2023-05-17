@@ -390,7 +390,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
         mem_cache_offset += ite_cache_offset;
 
         if (layernorm_type_ == LayerNormType::pre_layernorm) {
-            invokeGeneralT5LayerNorm(decoder_normed_input_,
+            invokeGeneralATMLayerNorm(decoder_normed_input_,
                                      decoder_input,
                                      decoder_layer_weight->at(l)->self_attn_layernorm_weights.gamma,
                                      decoder_layer_weight->at(l)->self_attn_layernorm_weights.beta,
@@ -424,7 +424,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
                                        &decoder_layer_weight->at(l)->self_attention_weights);
 
         if (layernorm_type_ == LayerNormType::pre_layernorm) {
-            invokeGeneralAddBiasResidualT5PreLayerNorm(
+            invokeGeneralAddBiasResidualATMPreLayerNorm(
                 self_attn_output_,
                 normed_self_attn_output_,
                 decoder_input,
@@ -437,7 +437,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
                 stream_);
         }
         else if (layernorm_type_ == LayerNormType::post_layernorm) {
-            invokeGeneralAddBiasResidualT5PreLayerNorm(
+            invokeGeneralAddBiasResidualATMPreLayerNorm(
                 self_attn_output_,
                 self_attn_output_,
                 decoder_input,
@@ -484,7 +484,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
                                         &decoder_layer_weight->at(l)->cross_attention_weights);
 
         if (layernorm_type_ == LayerNormType::pre_layernorm) {
-            invokeGeneralAddBiasResidualT5PreLayerNorm(
+            invokeGeneralAddBiasResidualATMPreLayerNorm(
                 cross_attn_output_,
                 normed_cross_attn_output_,
                 self_attn_output_,
@@ -497,7 +497,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
                 stream_);
         }
         else if (layernorm_type_ == LayerNormType::post_layernorm) {
-            invokeGeneralAddBiasResidualT5PreLayerNorm(
+            invokeGeneralAddBiasResidualATMPreLayerNorm(
                 cross_attn_output_,
                 cross_attn_output_,
                 self_attn_output_,
@@ -534,7 +534,7 @@ void BartDecoder<T>::forward(std::vector<Tensor>*                           outp
                                     stream_);
         }
         else if (layernorm_type_ == LayerNormType::post_layernorm) {
-            invokeGeneralAddBiasResidualT5PreLayerNorm(decoder_output,
+            invokeGeneralAddBiasResidualATMPreLayerNorm(decoder_output,
                                                        decoder_output,
                                                        cross_attn_output_,
                                                        decoder_layer_weight->at(l)->layernorm_weights.gamma,

@@ -184,6 +184,28 @@ void invokeGeneralAddBiasResidualT5PreLayerNorm(T*           output,
                                                 cudaStream_t stream);
 
 template<typename T>
+void invokeGeneralATMLayerNorm(T*           out,
+                               const T*     input,
+                               const T*     gamma,
+                               const T*     beta,
+                               const float  layernorm_eps,
+                               const int    m,
+                               const int    n,
+                               cudaStream_t stream);
+
+template<typename T>
+void invokeGeneralAddBiasResidualATMPreLayerNorm(T*           output,
+                                                 T*           norm_output,
+                                                 const T*     input,
+                                                 const T*     gamma,
+                                                 const T*     beta,
+                                                 const T*     bias,
+                                                 const float  layernorm_eps,
+                                                 int          m,
+                                                 int          n,
+                                                 cudaStream_t stream);
+
+template<typename T>
 void invokeLayernormShiftPartition(T*           out,
                                    const T*     input,
                                    const T*     gamma,

@@ -559,7 +559,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
         // Before layers, BART/mBART has a layernorm on the embeddings. Different from T5
         // should we put rank=0 condition here?
         if (false) {
-        invokeGeneralT5LayerNorm(bart_encoder_input_ptr,
+        invokeGeneralATMLayerNorm(bart_encoder_input_ptr,
                                  bart_encoder_input_ptr,
                                  bart_encoder_weights->pre_transformer_layernorm_weights.gamma,
                                  bart_encoder_weights->pre_transformer_layernorm_weights.beta,
@@ -592,7 +592,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
                 }
             }
             if (layernorm_type_ == LayerNormType::pre_layernorm) {
-                invokeGeneralT5LayerNorm(normed_from_tensor_,
+                invokeGeneralATMLayerNorm(normed_from_tensor_,
                                          from_tensor,
                                          layer_weight->attn_layernorm_weights_.gamma,
                                          layer_weight->attn_layernorm_weights_.beta,
@@ -643,7 +643,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
             }
 
             if (layernorm_type_ == LayerNormType::post_layernorm) {
-                invokeGeneralAddBiasResidualT5PreLayerNorm(
+                invokeGeneralAddBiasResidualATMPreLayerNorm(
                     attn_out_buf_,
                     attn_out_buf_,
                     from_tensor,
@@ -656,7 +656,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
                     stream_);
             }
             else if (layernorm_type_ == LayerNormType::pre_layernorm) {
-                invokeGeneralAddBiasResidualT5PreLayerNorm(
+                invokeGeneralAddBiasResidualATMPreLayerNorm(
                     attn_out_buf_,
                     normed_attn_out_buf_,
                     from_tensor,
@@ -684,7 +684,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
             }
 
             if (layernorm_type_ == LayerNormType::post_layernorm) {
-                invokeGeneralAddBiasResidualT5PreLayerNorm(out_tensor,
+                invokeGeneralAddBiasResidualATMPreLayerNorm(out_tensor,
                                                            out_tensor,
                                                            attn_out_buf_,
                                                            layer_weight->ffn_layernorm_weights_.gamma,
@@ -717,7 +717,7 @@ void BartEncoder<T>::forward(TensorMap*                  output_tensors,
 
         if (pipeline_para_.rank_ == pipeline_para_.world_size_ - 1) {
             if (mbart) {  // mBART has final layernorm after Transformer block. BART doesn't
-                invokeGeneralT5LayerNorm(bart_encoder_output_ptr,
+                invokeGeneralATMLayerNorm(bart_encoder_output_ptr,
                                          bart_encoder_output_ptr,
                                          bart_encoder_weights->post_transformer_layernorm_weights.gamma,
                                          bart_encoder_weights->post_transformer_layernorm_weights.beta,

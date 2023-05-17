@@ -1562,6 +1562,130 @@ template void invokeGeneralAddBiasResidualT5PreLayerNorm(__nv_bfloat16*       ou
                                                          cudaStream_t         stream);
 #endif
 
+template<typename T>
+__global__ void generalAddBiasResidualATMLayerNorm(const T* __restrict input,
+                                                   const T* __restrict gamma,
+                                                   const T* __restrict beta,
+                                                   const T* __restrict bias,
+                                                   T*          output,
+                                                   T*          norm_output,
+                                                   const float layernorm_eps,
+                                                   int         m,
+                                                   int         n)
+{
+    // layernorm module in the ATM style, with bias, subtraction of mean in x but no subtraction of mean in variance.
+    // nn.Layernorm: [(x-mean)/sqrt(var+eps)]*gamma + beta, where var = E[(X-E[X])^2] = E[X^2] - E[X]^2. Need 2 block
+    // reduces to compute the mean of X and X^2 RMS layernorm (T5): [x/sqrt(var+eps)] * gamma, where var = E[X^2]. (1)
+    // no bias (2) no mean substraction in x (3) no mean substraction in  var. Faster and only needs 1 block reduce to
+    // compute the mean of X^2 ATM layernorm: [(x-mean)/sqrt(var+eps)], where var = E[X^2]. Need 2 block reduces to
+    // compute the mean of X and X^2, but var calculation follows RMS that only uses X^2. Mix of nn and RMS layernorms
+    // both T5 and ATM need to force layernorm in FP32 and then clamp for FP16
+    __shared__ float s_mean;
+    __shared__ float s_variance;
+    float            mean     = 0.0f;
+    float            variance = 0.0f;
+
+    float local_sum = 0.0f;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        // attn output <-- output + bias
+        // output (hidden_states) <-- attn output + input (residual), i.e. output + bias + residual
+        // normalized hidden states <-- LN(hidden_states)
+        output[blockIdx.x * n + i] = clamp_inf_for_half<T>((float)ldg(&input[blockIdx.x * n + i]) + (float)ldg(&bias[i])
+                                                           + (float)output[blockIdx.x * n + i]);
+        local_sum += (float)(ldg(&output[blockIdx.x * n + i]));
+    }
+
+    mean = blockReduceSum(local_sum);
+
+    if (threadIdx.x == 0) {
+        s_mean = mean / n;
+    }
+    __syncthreads();
+
+    float local_var_sum = 0.0f;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        float diff = (float)(output[blockIdx.x * n + i]);
+        local_var_sum += diff * diff;
+    }
+    variance = blockReduceSum(local_var_sum);
+
+    if (threadIdx.x == 0) {
+        s_variance = rsqrtf(variance / (float)n + layernorm_eps);
+    }
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        norm_output[blockIdx.x * n + i] =
+            clamp_inf_for_half<T>((((float)output[blockIdx.x * n + i] - s_mean) * s_variance) * (float)(ldg(&gamma[i]))
+                                  + (float)ldg(&beta[i]));
+    }
+}
+
+template<typename T>
+void invokeGeneralAddBiasResidualATMPreLayerNorm(T*           output,
+                                                 T*           norm_output,
+                                                 const T*     input,
+                                                 const T*     gamma,
+                                                 const T*     beta,
+                                                 const T*     bias,
+                                                 const float  layernorm_eps,
+                                                 int          m,
+                                                 int          n,
+                                                 cudaStream_t stream)
+{
+    dim3 grid(m);
+    dim3 block(min(n, 1024));
+
+    /* For general cases, n is equal to hidden_units, e.g., 512/1024.
+    Since we have warp shuffle inside the code, block.x % 32 should be 0.
+    */
+
+    if (n % 32 != 0) {
+        block.x = 1024;
+    }
+
+    // TODO(bhsueh) add 16bitx2 implementation
+    /* should pay attention to the rsqrt precision*/
+    generalAddBiasResidualATMLayerNorm<T>
+        <<<grid, block, 0, stream>>>(input, gamma, beta, bias, output, norm_output, layernorm_eps, m, n);
+
+    return;
+}
+
+template void invokeGeneralAddBiasResidualATMPreLayerNorm(float*       output,
+                                                          float*       norm_output,
+                                                          const float* input,
+                                                          const float* gamma,
+                                                          const float* beta,
+                                                          const float* bias,
+                                                          const float  layernorm_eps,
+                                                          int          m,
+                                                          int          n,
+                                                          cudaStream_t stream);
+
+template void invokeGeneralAddBiasResidualATMPreLayerNorm(half*        output,
+                                                          half*        norm_output,
+                                                          const half*  input,
+                                                          const half*  gamma,
+                                                          const half*  beta,
+                                                          const half*  bias,
+                                                          const float  layernorm_eps,
+                                                          int          m,
+                                                          int          n,
+                                                          cudaStream_t stream);
+#ifdef ENABLE_BF16
+template void invokeGeneralAddBiasResidualATMPreLayerNorm(__nv_bfloat16*       output,
+                                                          __nv_bfloat16*       norm_output,
+                                                          const __nv_bfloat16* input,
+                                                          const __nv_bfloat16* gamma,
+                                                          const __nv_bfloat16* beta,
+                                                          const __nv_bfloat16* bias,
+                                                          const float          layernorm_eps,
+                                                          int                  m,
+                                                          int                  n,
+                                                          cudaStream_t         stream);
+#endif
+
 template<typename T, bool DYNAMIC_SCALING = false>
 __global__ void generalLayerNorm(const T* __restrict input,
                                  const T* __restrict gamma,
@@ -1857,6 +1981,113 @@ template void invokeGeneralT5LayerNorm(__nv_bfloat16*       out,
                                        const int            m,
                                        const int            n,
                                        cudaStream_t         stream);
+#endif
+
+template<typename T>
+__global__ void generalATMLayerNorm(const T* __restrict input,
+                                    const T* __restrict gamma,
+                                    const T* __restrict beta,
+                                    T*          output,
+                                    const float layernorm_eps,
+                                    int         m,
+                                    int         n)
+{
+    // layernorm module in the ATM style, with bias, subtraction of mean in x but no subtraction of mean in variance.
+    // nn.Layernorm: [(x-mean)/sqrt(var+eps)]*gamma + beta, where var = E[(X-E[X])^2] = E[X^2] - E[X]^2. Need 2 block
+    // reduces to compute the mean of X and X^2 RMS layernorm (T5): [x/sqrt(var+eps)] * gamma, where var = E[X^2]. (1)
+    // no bias (2) no mean substraction in x (3) no mean substraction in  var. Faster and only needs 1 block reduce to
+    // compute the mean of X^2 ATM layernorm: [(x-mean)/sqrt(var+eps)], where var = E[X^2]. Need 2 block reduces to
+    // compute the mean of X and X^2, but var calculation follows RMS that only uses X^2. Mix of nn and RMS layernorms
+    // both T5 and ATM need to force layernorm in FP32 and then clamp for FP16
+    const int tid = threadIdx.x;
+
+    __shared__ float s_mean;
+    __shared__ float s_variance;
+    float            mean     = 0.0f;
+    float            variance = 0.0f;
+
+    float local_sum = 0.0f;
+    for (int i = tid; i < n; i += blockDim.x) {
+        local_sum += (float)(ldg(&input[blockIdx.x * n + i]));
+    }
+
+    mean = blockReduceSum(local_sum);
+
+    if (threadIdx.x == 0) {
+        s_mean = mean / n;
+    }
+    __syncthreads();
+
+    float local_var_sum = 0.0f;
+    for (int i = tid; i < n; i += blockDim.x) {
+        float diff = (float)(ldg(&input[blockIdx.x * n + i]));
+        local_var_sum += diff * diff;
+    }
+    variance = blockReduceSum(local_var_sum);
+
+    if (threadIdx.x == 0) {
+        s_variance = rsqrtf(variance / (float)n + layernorm_eps);
+    }
+    __syncthreads();
+
+    for (int i = tid; i < n; i += blockDim.x) {
+        output[blockIdx.x * n + i] =
+            clamp_inf_for_half<T>((((float)input[blockIdx.x * n + i] - s_mean) * s_variance) * (float)(ldg(&gamma[i]))
+                                  + (float)ldg(&beta[i]));
+    }
+}
+
+template<typename T>
+void invokeGeneralATMLayerNorm(T*           out,
+                               const T*     input,
+                               const T*     gamma,
+                               const T*     beta,
+                               const float  layernorm_eps,
+                               const int    m,
+                               const int    n,
+                               cudaStream_t stream)
+{
+    dim3 grid(m);
+    dim3 block(min(n, 1024));
+
+    /* For general cases, n is equal to hidden_units, e.g., 512/1024.
+        Since we have warp shuffle inside the code, block.x % 32 should be 0.
+    */
+    if (n % 32 != 0) {
+        block.x = 1024;
+    }
+
+    block.x = block.x / (4 / sizeof(T));  // if using half, only need half of block.x
+
+    /* should pay attention to the rsqrt precision*/
+    generalATMLayerNorm<T><<<grid, block, 0, stream>>>(input, gamma, beta, out, layernorm_eps, m, n);
+}
+
+template void invokeGeneralATMLayerNorm(float*       out,
+                                        const float* input,
+                                        const float* gamma,
+                                        const float* beta,
+                                        const float  layernorm_eps,
+                                        const int    m,
+                                        const int    n,
+                                        cudaStream_t stream);
+template void invokeGeneralATMLayerNorm(half*        out,
+                                        const half*  input,
+                                        const half*  gamma,
+                                        const half*  beta,
+                                        const float  layernorm_eps,
+                                        const int    m,
+                                        const int    n,
+                                        cudaStream_t stream);
+#ifdef ENABLE_BF16
+template void invokeGeneralATMLayerNorm(__nv_bfloat16*       out,
+                                        const __nv_bfloat16* input,
+                                        const __nv_bfloat16* gamma,
+                                        const __nv_bfloat16* beta,
+                                        const float          layernorm_eps,
+                                        const int            m,
+                                        const int            n,
+                                        cudaStream_t         stream);
 #endif
 
 /*******************  invokeLayernormShiftPartition  ***********************/

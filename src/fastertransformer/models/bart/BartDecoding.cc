@@ -503,7 +503,7 @@ void BartDecoding<T>::forward(TensorMap*                   output_tensors,
 
             // BART/mBART has a layernorm after word + positional embedding
             if (false) {
-            invokeGeneralT5LayerNorm(decoder_input_buf_ + d_model_offset,
+            invokeGeneralATMLayerNorm(decoder_input_buf_ + d_model_offset,
                                      decoder_input_buf_ + d_model_offset,
                                      decoding_weights->pre_decoder_layernorm.gamma,
                                      decoding_weights->pre_decoder_layernorm.beta,
@@ -576,7 +576,7 @@ void BartDecoding<T>::forward(TensorMap*                   output_tensors,
                 T* decoder_output_buf_tmp = mbart ? normed_decoder_output_buf_ : decoder_output_buf_;
 
                 if (mbart) {
-                    invokeGeneralT5LayerNorm(decoder_output_buf_tmp + d_model_offset,
+                    invokeGeneralATMLayerNorm(decoder_output_buf_tmp + d_model_offset,
                                              decoder_output_buf_ + d_model_offset,
                                              decoding_weights->post_decoder_layernorm.gamma,
                                              decoding_weights->post_decoder_layernorm.beta,
