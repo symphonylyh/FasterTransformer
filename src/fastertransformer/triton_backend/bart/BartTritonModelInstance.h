@@ -75,6 +75,7 @@ private:
     float* d_top_p_decay_      = nullptr;
     float* d_top_p_min_        = nullptr;
     int*   d_top_p_reset_ids_  = nullptr;
+    int*   d_ngram_size_       = nullptr;
 
     T*     d_encoder_outputs_  = nullptr;
     int*   d_output_ids_       = nullptr;

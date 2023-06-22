@@ -111,6 +111,30 @@ BartTritonModelInstance<T>::forward(std::shared_ptr<std::unordered_map<std::stri
         decoding_input_tensors.insert(
             {"top_p_reset_ids", as_GPU_tensor(input_tensors->at("top_p_reset_ids"), d_top_p_reset_ids_)});
     }
+    if (input_tensors->find("no_repeat_ngram_size") != input_tensors->end()) {
+        if (input_tensors->at("no_repeat_ngram_size").shape.size() == 1) {
+            // expand a single value to [batch size] tensor
+            int ngram = ((int*)input_tensors->at("no_repeat_ngram_size").data)[0];
+            std::vector<int> ngram_batch(request_batch_size, ngram);
+            if (ngram > 0) {
+                ft::check_cuda_error(cudaMemcpy(
+                    d_ngram_size_, (int*)ngram_batch.data(), sizeof(int) * request_batch_size, cudaMemcpyDefault));
+                decoding_input_tensors.insert({"no_repeat_ngram_size",
+                                               ft::Tensor{ft::MEMORY_GPU,
+                                                          ft::TYPE_INT32,
+                                                          std::vector<size_t>{request_batch_size},
+                                                          d_ngram_size_}});
+            }
+        }
+        else if (input_tensors->at("no_repeat_ngram_size").shape.size() == request_batch_size) {
+            move_tensor_H2D(input_tensors->at("no_repeat_ngram_size"), d_ngram_size_, &allocator_);
+            decoding_input_tensors.insert(
+                {"no_repeat_ngram_size", as_GPU_tensor(input_tensors->at("no_repeat_ngram_size"), d_ngram_size_)});
+        }
+        else {
+            FT_CHECK_WITH_INFO(false, "No-repeat ngram size must be [1] or [batch size] tensor");
+        }
+    }
 
     std::set<std::string> keys_on_gpu = {"input_ids",
                                          "sequence_length",
@@ -118,7 +142,8 @@ BartTritonModelInstance<T>::forward(std::shared_ptr<std::unordered_map<std::stri
                                          "stop_words_list",
                                          "top_p_decay",
                                          "top_p_min",
-                                         "top_p_reset_ids"};
+                                         "top_p_reset_ids",
+                                         "no_repeat_ngram_size"};
     for (auto& t : *input_tensors) {
         if (keys_on_gpu.count(t.first) == 0) {
             decoding_input_tensors.insert({t.first, t.second.convertTritonTensorToFt()});
@@ -198,6 +223,7 @@ void BartTritonModelInstance<T>::allocateBuffer(const size_t request_batch_size,
     d_cum_log_probs_    = (float*)(allocator_->reMalloc(
         d_cum_log_probs_, sizeof(float) * request_batch_size * beam_width * max_output_len, false));
     d_within_range_     = (bool*)(allocator_->reMalloc(d_within_range_, sizeof(bool)));
+    d_ngram_size_ = (int*)(allocator_->reMalloc(d_ngram_size_, sizeof(int) * request_batch_size, false));
 }
 
 template<typename T>
@@ -209,6 +235,7 @@ void BartTritonModelInstance<T>::freeBuffer()
     allocator_->free((void**)(&d_output_log_probs_));
     allocator_->free((void**)(&d_cum_log_probs_));
     allocator_->free((void**)(&d_within_range_));
+    allocator_->free((void**)(&d_ngram_size_));
 }
 
 template struct BartTritonModelInstance<float>;
